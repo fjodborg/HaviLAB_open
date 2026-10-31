@@ -30,47 +30,6 @@ fn segmentation_capability_with_types(inputs: &[&str], outputs: &[&str]) -> Mode
 }
 
 #[test]
-fn test_message_type_roundtrip() {
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::Reset.to_byte()),
-        Some(ServerMessageType::Reset)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::Error.to_byte()),
-        Some(ServerMessageType::Error)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::StreamError.to_byte()),
-        Some(ServerMessageType::StreamError)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::ImageSet.to_byte()),
-        Some(ServerMessageType::ImageSet)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::ModelReady.to_byte()),
-        Some(ServerMessageType::ModelReady)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::InferProgress.to_byte()),
-        Some(ServerMessageType::InferProgress)
-    );
-    assert_eq!(
-        ServerMessageType::from_byte(ServerMessageType::InferResult.to_byte()),
-        Some(ServerMessageType::InferResult)
-    );
-}
-
-#[test]
-fn test_connection_level_messages() {
-    assert!(ServerMessageType::Capabilities.is_connection_level());
-    assert!(ServerMessageType::Ping.is_connection_level());
-    assert!(ServerMessageType::Error.is_connection_level());
-    assert!(!ServerMessageType::Reset.is_connection_level());
-    assert!(!ServerMessageType::StreamError.is_connection_level());
-}
-
-#[test]
 fn test_error_code_category() {
     assert_eq!(ErrorCode::ImageNotFound.category(), ErrorCategory::Image);
     assert_eq!(
@@ -141,17 +100,15 @@ fn test_capabilities_json_roundtrip() {
         limits: ServerLimits {
             max_image_size: 1024 * 1024,
             max_pyramid_levels: 4,
-            max_concurrent_streams: 2,
             max_concurrent_inferences: 1,
         },
         features: ServerFeatures {
-            streaming: true,
             project_state: true,
             downloads: true,
             thumbnails: true,
             inference: true,
             sam: false,
-            progressive_streaming: true,
+            managed_upload_keep_both: false,
         },
         download_mode: DownloadMode::Chunked,
         models: vec![ModelCapability {
@@ -192,7 +149,6 @@ fn test_capabilities_deserialize_without_features_defaults() {
         "limits": {
             "max_image_size": 1024,
             "max_pyramid_levels": 4,
-            "max_concurrent_streams": 2,
             "max_concurrent_inferences": 1
         },
         "models": []
@@ -206,6 +162,30 @@ fn test_capabilities_deserialize_without_features_defaults() {
 }
 
 #[test]
+fn managed_upload_keep_both_capability_missing_field_defaults_false() {
+    let json = serde_json::json!({
+        "project_state": true,
+        "downloads": true,
+        "thumbnails": false,
+        "inference": false,
+        "sam": false
+    });
+
+    let features: ServerFeatures = serde_json::from_value(json).unwrap();
+    assert!(!features.managed_upload_keep_both);
+}
+
+#[test]
+fn managed_upload_keep_both_capability_serializes_under_features() {
+    let mut capabilities = ServerCapabilities::default();
+    capabilities.features.managed_upload_keep_both = true;
+
+    let json = serde_json::to_value(capabilities).unwrap();
+    assert_eq!(json["features"]["managed_upload_keep_both"], true);
+    assert!(json.get("managed_upload_keep_both").is_none());
+}
+
+#[test]
 fn test_capabilities_deserialize_without_download_mode_defaults_unknown() {
     let json = serde_json::json!({
         "protocol_version": PROTOCOL_VERSION,
@@ -216,17 +196,14 @@ fn test_capabilities_deserialize_without_download_mode_defaults_unknown() {
         "limits": {
             "max_image_size": 1024,
             "max_pyramid_levels": 4,
-            "max_concurrent_streams": 2,
             "max_concurrent_inferences": 1
         },
         "features": {
-            "streaming": true,
             "project_state": true,
             "downloads": true,
             "thumbnails": true,
             "inference": false,
-            "sam": false,
-            "progressive_streaming": false
+            "sam": false
         },
         "models": []
     });
@@ -339,37 +316,6 @@ fn test_model_capability_example_similarity_from_mask_or_embedding_input() {
     let embedding_prompt_model =
         segmentation_capability_with_types(&["embedding"], &["polygon_list"]);
     assert!(embedding_prompt_model.supports_example_similarity_to_mask());
-}
-
-#[test]
-fn test_client_message_serialization() {
-    let msg = ClientMessage::SetImage {
-        request_id: 1,
-        image_id: "test".to_string(),
-    };
-    let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("\"action\":\"set_image\""));
-    assert!(json.contains("\"request_id\":1"));
-    assert!(json.contains("\"image_id\":\"test\""));
-
-    let msg = ClientMessage::PrepareModel {
-        request_id: 2,
-        model_id: "sam-base".to_string(),
-        image_id: None,
-        config: None,
-    };
-    let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("\"action\":\"prepare_model\""));
-
-    let msg = ClientMessage::Infer {
-        request_id: 3,
-        model_id: "sam-base".to_string(),
-        image_id: None,
-        inputs: serde_json::json!({"points": []}),
-        options: serde_json::json!({}),
-    };
-    let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("\"action\":\"infer\""));
 }
 
 #[test]

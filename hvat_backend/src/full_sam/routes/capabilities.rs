@@ -31,17 +31,15 @@ pub fn build_server_capabilities(state: &AppState) -> ServerCapabilities {
         limits: ServerLimits {
             max_image_size: state.config.max_cache_memory,
             max_pyramid_levels: hvat_common::MAX_PYRAMID_LEVEL,
-            max_concurrent_streams: state.config.max_user_streams as u32,
             max_concurrent_inferences: MAX_CONCURRENT_INFERENCES,
         },
         features: ServerFeatures {
-            streaming: true,
             project_state: true,
             downloads: true,
             thumbnails: true,
             inference: inference_enabled,
             sam: false,
-            progressive_streaming: true,
+            managed_upload_keep_both: true,
         },
         download_mode: DownloadMode::Chunked,
         models,

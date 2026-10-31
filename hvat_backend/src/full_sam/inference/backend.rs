@@ -6,10 +6,8 @@ use serde_json::Value;
 
 /// Image context for inference operations.
 ///
-/// Note: For efficiency, the WebSocket handler should cache loaded image data
-/// per connection to avoid reloading for each `infer` call. The `rgb_data` field
-/// may be empty for `infer` calls on models that use cached embeddings (like SAM),
-/// but must be populated for `prepare` calls.
+/// For models using cached embeddings, `rgb_data` may be empty on `infer` calls
+/// but must be populated on `prepare` calls.
 pub struct ImageContext {
     pub image_id: String,
     /// RGB pixel data. May be empty if model uses cached embeddings and this is an `infer` call.
@@ -37,7 +35,7 @@ pub trait InferenceBackend: Send + Sync {
     /// Unique model identifier (e.g., "sam-base", "yolo-v8-detect").
     fn model_id(&self) -> &str;
 
-    /// Model capability description for protocol negotiation.
+    /// Model capability description for REST capability discovery.
     fn capability(&self) -> ModelCapability;
 
     /// Whether this model requires pre-computed embeddings.
@@ -47,8 +45,7 @@ pub trait InferenceBackend: Send + Sync {
 
     /// Pre-compute embeddings for the given image (optional).
     ///
-    /// Called when client sends `prepare_model`. For models like SAM
-    /// that benefit from caching expensive encoder outputs.
+    /// Called when a REST route prepares a model, such as SAM's image encoder.
     ///
     /// # Default Implementation
     /// This default returns `Ok(())` immediately for models that don't need preparation.

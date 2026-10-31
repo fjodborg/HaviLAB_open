@@ -5,7 +5,7 @@ edition = "2024"
 default-run = "hvat_backend"
 license = "AGPL-3.0"
 authors = ["fjodborg <github.com/fjodborg>"]
-description = "HVAT API server for hyperspectral image streaming and annotation sync"
+description = "HVAT REST API server for hyperspectral images and annotations"
 
 [[bin]]
 name = "hvat_backend"
@@ -18,26 +18,14 @@ path = "src/full_sam/mock_main.rs"
 [[bin]]
 name = "simple"
 path = "src/simple/main.rs"
-required-features = ["legacy-ws"]
 
 [[bin]]
 name = "hvat_backend_sam3"
 path = "src/full_sam3/main.rs"
 
 [[example]]
-name = "custom_protocol_actions"
-path = "examples/custom_protocol_actions.rs"
-required-features = ["legacy-ws"]
-
-[[example]]
-name = "minimal_streaming_backend"
-path = "examples/minimal_streaming_backend.rs"
-required-features = ["legacy-ws"]
-
-[[example]]
-name = "streaming_state_downloads_backend"
-path = "examples/streaming_state_downloads_backend.rs"
-required-features = ["legacy-ws"]
+name = "project_state_downloads_backend"
+path = "examples/project_state_downloads_backend.rs"
 
 [features]
 default = []
@@ -47,14 +35,13 @@ sam-cuda = ["ort/cuda"]
 # Mutually exclusive with `sam-cuda`: each pulls a different prebuilt onnxruntime
 # binary (there is no combined wgpu+cu12 dist), so enable only one at a time.
 sam-webgpu = ["ort/webgpu"]
-legacy-ws = []
 
 [dependencies]
 # Shared utilities
 hvat_common = { path = "../hvat_common" }
 
 # Web framework
-axum = { version = "0.8", features = ["macros", "multipart", "ws"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
 axum-extra = { version = "0.10", features = ["typed-header"] }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -100,8 +87,6 @@ reqwest = { version = "0.12", features = ["json"] }
 log = { workspace = true }
 
 [dev-dependencies]
-tokio-tungstenite = "0.26"
-futures-util = "0.3"
 tempfile = "3"
 env_logger = "0.11"
 

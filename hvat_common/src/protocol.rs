@@ -1,194 +1,12 @@
-//! WebSocket protocol types shared between client and server.
-//!
-//! This module defines the binary protocol for streaming hyperspectral images
-//! and running model inference over WebSocket connections.
+//! REST capability schemas and shared model/error types.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Current protocol version.
 ///
-/// Version 2: Model-agnostic inference protocol with self-describing capabilities.
+/// Version 2: Model-agnostic contract with self-describing capabilities.
 pub const PROTOCOL_VERSION: u8 = 2;
-
-/// Binary message types (server → client).
-///
-/// The first byte of every binary WebSocket message identifies its type.
-///
-/// # Protocol Format
-///
-/// **Multiplexed WebSocket:**
-/// - Header: `[version:u8][type:u8][request_id:u32][payload...]`
-/// - All streams share one WebSocket at `/api/ws`, identified by request_id
-/// - Connection-level messages (Capabilities, Ping) use request_id = 0
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerMessageType {
-    // ========================================================================
-    // Streaming messages (0x00-0x0F)
-    // ========================================================================
-    /// Clear display, new image starting (no payload)
-    Reset = 0x00,
-
-    /// Image metadata for current pyramid level
-    Metadata = 0x01,
-
-    /// Chunk of layer data
-    LayerChunk = 0x02,
-
-    /// Layer upload complete
-    LayerComplete = 0x03,
-
-    /// Pyramid level complete
-    LevelComplete = 0x04,
-
-    /// Stream complete (all requested levels sent)
-    StreamComplete = 0x05,
-
-    /// Server capabilities (sent on connect)
-    Capabilities = 0x06,
-
-    /// Stream error - error for specific request_id
-    StreamError = 0x07,
-
-    // ========================================================================
-    // Inference messages (0x10-0x1F)
-    // ========================================================================
-    /// Image context set successfully
-    ImageSet = 0x10,
-
-    /// Model embedding ready for inference
-    ModelReady = 0x11,
-
-    /// Inference progress update (optional)
-    InferProgress = 0x12,
-
-    /// Inference result (JSON payload)
-    InferResult = 0x13,
-
-    // ========================================================================
-    // Connection-level messages (0xFE-0xFF)
-    // ========================================================================
-    /// Error with code and context (connection-level)
-    Error = 0xFE,
-
-    /// Keepalive ping
-    Ping = 0xFF,
-}
-
-impl ServerMessageType {
-    /// Parse from byte value.
-    pub fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0x00 => Some(Self::Reset),
-            0x01 => Some(Self::Metadata),
-            0x02 => Some(Self::LayerChunk),
-            0x03 => Some(Self::LayerComplete),
-            0x04 => Some(Self::LevelComplete),
-            0x05 => Some(Self::StreamComplete),
-            0x06 => Some(Self::Capabilities),
-            0x07 => Some(Self::StreamError),
-            0x10 => Some(Self::ImageSet),
-            0x11 => Some(Self::ModelReady),
-            0x12 => Some(Self::InferProgress),
-            0x13 => Some(Self::InferResult),
-            0xFE => Some(Self::Error),
-            0xFF => Some(Self::Ping),
-            _ => None,
-        }
-    }
-
-    /// Convert to byte value.
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
-
-    /// Returns true if this message type is connection-level (not stream-specific).
-    ///
-    /// Connection-level messages use request_id = 0 in the multiplexed protocol.
-    pub fn is_connection_level(&self) -> bool {
-        matches!(self, Self::Capabilities | Self::Ping | Self::Error)
-    }
-}
-
-/// Client message types (client → server, JSON).
-///
-/// These are sent as JSON text frames over the WebSocket.
-///
-/// # Multiplexed Protocol
-///
-/// All messages include `request_id` for correlation with server responses.
-/// The client generates unique request IDs per connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum ClientMessage {
-    // ========================================================================
-    // Image context messages
-    // ========================================================================
-    /// Set active image context for subsequent operations.
-    ///
-    /// This must be called before `stream_image` or `infer`.
-    SetImage { request_id: u32, image_id: String },
-
-    // ========================================================================
-    // Streaming messages
-    // ========================================================================
-    /// Request image streaming.
-    ///
-    /// If `progressive` is true, sends all levels from highest (smallest) to
-    /// `level` (largest). If false, sends only the requested level.
-    StreamImage {
-        request_id: u32,
-        level: u32,
-        #[serde(default)]
-        progressive: bool,
-    },
-
-    /// Cancel a specific stream.
-    CancelStream { request_id: u32 },
-
-    // ========================================================================
-    // Model inference messages
-    // ========================================================================
-    /// Pre-compute model embeddings (for models that require it).
-    ///
-    /// Called when user selects a model with `requires_embedding: true`.
-    /// Server responds with `ModelReady` when done.
-    ///
-    /// Optional `config` field allows model-specific configuration.
-    /// For SAM models, config can include band selection for hyperspectral images.
-    PrepareModel {
-        request_id: u32,
-        model_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        image_id: Option<String>,
-        #[serde(default)]
-        config: Option<serde_json::Value>,
-    },
-
-    /// Run inference with the active image.
-    ///
-    /// The `inputs` object must match the model's input schema.
-    /// The `options` object can override model defaults.
-    Infer {
-        request_id: u32,
-        model_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        image_id: Option<String>,
-        inputs: serde_json::Value,
-        #[serde(default)]
-        options: serde_json::Value,
-    },
-
-    /// Cancel an ongoing inference operation.
-    CancelInfer { request_id: u32 },
-
-    // ========================================================================
-    // Connection messages
-    // ========================================================================
-    /// Respond to server ping.
-    Pong { timestamp: u64 },
-}
 
 /// Error codes organized by category.
 ///
@@ -237,7 +55,6 @@ pub enum ErrorCode {
     AuthFailed = 4005,
     RateLimited = 4006,
     SessionExpired = 4007,
-    MaxConnectionsReached = 4008,
 
     // Server errors (5xxx)
     InternalError = 5000,
@@ -291,51 +108,6 @@ impl ErrorCode {
             _ => 1000,
         }
     }
-
-    /// Parse from u16 value.
-    pub fn from_u16(value: u16) -> Option<Self> {
-        match value {
-            1000 => Some(Self::ImageNotFound),
-            1001 => Some(Self::InvalidLevel),
-            1002 => Some(Self::ImageCorrupted),
-            1003 => Some(Self::UnsupportedFormat),
-            1004 => Some(Self::ImageTooLarge),
-            1010 => Some(Self::NoActiveImage),
-            2000 => Some(Self::PyramidNotReady),
-            2001 => Some(Self::PyramidBuildFailed),
-            2002 => Some(Self::PyramidCorrupted),
-            2003 => Some(Self::PyramidStorageFull),
-            2004 => Some(Self::PyramidTimeout),
-            3010 => Some(Self::ModelNotFound),
-            3011 => Some(Self::InvalidInput),
-            3012 => Some(Self::MissingInput),
-            3013 => Some(Self::EmbeddingRequired),
-            3014 => Some(Self::EmbeddingExpired),
-            3015 => Some(Self::ModelBusy),
-            3016 => Some(Self::ModelEncodeFailed),
-            3017 => Some(Self::ModelDecodeFailed),
-            3018 => Some(Self::ModelOutOfMemory),
-            4000 => Some(Self::ConnectionTimeout),
-            4001 => Some(Self::ConnectionRefused),
-            4002 => Some(Self::ConnectionDropped),
-            4003 => Some(Self::ProtocolMismatch),
-            4004 => Some(Self::AuthRequired),
-            4005 => Some(Self::AuthFailed),
-            4006 => Some(Self::RateLimited),
-            4007 => Some(Self::SessionExpired),
-            4008 => Some(Self::MaxConnectionsReached),
-            5000 => Some(Self::InternalError),
-            5001 => Some(Self::ServiceUnavailable),
-            5002 => Some(Self::StorageError),
-            5003 => Some(Self::OutOfMemory),
-            5004 => Some(Self::ConfigurationError),
-            6000 => Some(Self::InvalidRequest),
-            6001 => Some(Self::InvalidAction),
-            6002 => Some(Self::MissingField),
-            6003 => Some(Self::InvalidValue),
-            _ => None,
-        }
-    }
 }
 
 /// Error category for grouping related errors.
@@ -360,33 +132,15 @@ pub enum Severity {
     Warning = 1,
     /// Error, operation failed but connection remains open
     Error = 2,
-    /// Fatal error, connection will be closed
+    /// Fatal error, operation cannot continue
     Fatal = 3,
-}
-
-impl Severity {
-    /// Parse from byte value.
-    pub fn from_byte(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::Info),
-            1 => Some(Self::Warning),
-            2 => Some(Self::Error),
-            3 => Some(Self::Fatal),
-            _ => None,
-        }
-    }
-
-    /// Convert to byte value.
-    pub fn to_byte(self) -> u8 {
-        self as u8
-    }
 }
 
 // ============================================================================
 // Capabilities and Model Definitions
 // ============================================================================
 
-/// Server information.
+/// Server information returned by REST capability discovery.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServerInfo {
     pub name: String,
@@ -401,8 +155,7 @@ pub struct ServerLimits {
     /// Maximum image file size in bytes (not pixel dimensions).
     ///
     /// This limits the raw file size to prevent memory exhaustion, but does not
-    /// restrict image dimensions. Very large hyperspectral images are supported
-    /// through pyramid levels and chunked streaming.
+    /// restrict image dimensions.
     ///
     /// Default: 4GB (4,294,967,296 bytes)
     pub max_image_size: u64,
@@ -412,12 +165,7 @@ pub struct ServerLimits {
     /// Default: 8
     pub max_pyramid_levels: u8,
 
-    /// Maximum concurrent image streams per connection.
-    ///
-    /// Default: 4
-    pub max_concurrent_streams: u32,
-
-    /// Maximum concurrent inference operations per connection.
+    /// Maximum concurrent inference operations.
     ///
     /// Default: 2
     pub max_concurrent_inferences: u32,
@@ -428,15 +176,12 @@ impl Default for ServerLimits {
         Self {
             max_image_size: 4 * 1024 * 1024 * 1024, // 4GB
             max_pyramid_levels: 8,
-            max_concurrent_streams: 4,
             max_concurrent_inferences: 2,
         }
     }
 }
 
-/// Server capabilities sent on WebSocket connect.
-///
-/// This allows clients to discover available models and validate compatibility.
+/// Server capabilities returned by `GET /api/capabilities`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServerCapabilities {
     /// Protocol version supported by server
@@ -524,15 +269,6 @@ impl ServerCapabilities {
         matches!(self.download_mode, DownloadMode::Chunked)
     }
 
-    /// Whether the backend supports progressive multi-level streaming.
-    ///
-    /// Backwards compatibility:
-    /// - If `features.progressive_streaming` is set, that is authoritative.
-    /// - Otherwise, inference-capable backends are treated as progressive-capable.
-    pub fn supports_progressive_streaming(&self) -> bool {
-        self.features.progressive_streaming || self.supports_inference()
-    }
-
     /// Whether the backend supports HTTP thumbnail previews.
     ///
     /// Backwards compatibility:
@@ -553,9 +289,6 @@ impl ServerCapabilities {
 /// Optional feature flags announced by the backend.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ServerFeatures {
-    /// Supports image streaming over `/api/ws`.
-    #[serde(default)]
-    pub streaming: bool,
     /// Supports HTTP project state persistence endpoints.
     #[serde(default)]
     pub project_state: bool,
@@ -565,15 +298,15 @@ pub struct ServerFeatures {
     /// Supports HTTP thumbnail preview endpoints.
     #[serde(default)]
     pub thumbnails: bool,
-    /// Supports model inference over `/api/ws`.
+    /// Supports model inference over REST.
     #[serde(default)]
     pub inference: bool,
     /// Supports SAM-style interactive segmentation.
     #[serde(default)]
     pub sam: bool,
-    /// Supports server-side progressive multi-level streaming.
+    /// Supports no-clobber KEEP BOTH semantics for managed image uploads.
     #[serde(default)]
-    pub progressive_streaming: bool,
+    pub managed_upload_keep_both: bool,
 }
 
 /// Download transport mode announced by the backend.

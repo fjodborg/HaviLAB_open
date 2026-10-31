@@ -7,9 +7,8 @@ compatible clients.
 
 It provides:
 
-- protocol schema and shared wire-level types
-- binary parsing/encoding helpers
-- structured protocol errors
+- REST capability schema and shared model/error types
+- structured error presentation and retry metadata
 - hyperspectral band packing helpers
 - interpolation and pyramid-level safety types
 
@@ -17,35 +16,32 @@ It provides:
 
 | Module | What It Does | Key Types / APIs | Requires | Used By |
 |---|---|---|---|---|
-| `protocol.rs` | Versioned protocol types and model capability schema | `ClientMessage`, `ServerMessageType`, `ServerCapabilities`, `ServerFeatures`, `ErrorCode` | Protocol v2 compatibility | Backend and compatible clients |
-| `error.rs` | Structured protocol error payloads + context | `ProtocolError`, `ErrorContext` | Error codes + severity | Backend and compatible clients |
-| `binary.rs` | Safe cursor-based parsing | `BinaryReader` | Correct buffer layout | Protocol decoders and tests |
+| `protocol.rs` | REST capability and model schema | `ServerCapabilities`, `ServerFeatures`, `ErrorCode` | REST contract compatibility | Backend and compatible clients |
+| `error.rs` | Structured error presentation and context | `ProtocolError`, `ErrorContext` | Error codes + severity | Frontend diagnostics and application logic |
 | `packing.rs` | Band packing into RGBA texture-array layers | `pack_bands_to_rgba_layers`, `MIN_TEXTURE_LAYERS` | Bands normalized to `0.0..1.0` | Backend and rendering clients |
 | `interpolation.rs` | Bilinear sampling | `bilinear_sample` | Flat row-major input buffers | Backend downsampling/SAM post-processing |
-| `pyramid.rs` | Pyramid level validation and helpers | `PyramidLevel`, `MAX_PYRAMID_LEVEL` | Valid level bounds | Backend streaming and clients |
+| `pyramid.rs` | Pyramid level validation and helpers | `PyramidLevel`, `MAX_PYRAMID_LEVEL` | Valid level bounds | Backend and clients |
 | `lib.rs` helpers | Overflow-safe pixel count helpers and re-exports | `pixel_count`, `pixel_count_u32` | dimensions fit checked multiply | all crates |
 
 ## What It Can Do
 
-- Keep client/server message contracts in one place.
-- Encode/decode robust protocol errors with retry semantics and context payloads.
+- Keep REST capability/model contracts in one place.
+- Represent errors with retry semantics and contextual metadata.
 - Provide shared packing behavior so server and client layer counts stay consistent.
-- Prevent common parsing bugs with bounds-checked binary reads.
 - Prevent invalid pyramid-level values at compile/runtime boundaries.
 
 ## Requirements and Assumptions
 
 - `PROTOCOL_VERSION` must match across client and server implementations.
 - `ServerCapabilities.features` must stay backward-compatible; omitted fields should deserialize to defaults.
-- Any code writing binary frames must keep byte layout aligned with `BinaryReader` usage.
 - Packing assumes per-band buffers represent exactly `width * height` samples.
 - Packed channel values are clamped to `0.0..1.0` before conversion to `u8`.
 
 ## How To Interact With It
 
-- If adding a protocol message/field:
+- If adding a REST capability/model field:
   1. Update `protocol.rs` types.
-  2. Update server encoders/decoders and compatible client parsers.
+  2. Update the REST capability endpoint and compatible clients.
   3. Keep `PROTOCOL.md` in sync.
 - If adding a new error:
   1. Add code to `ErrorCode`.

@@ -1,7 +1,7 @@
 //! Image loader traits and implementations.
 //!
 //! The [`ImageLoader`] trait provides a unified interface for loading
-//! different image file formats into band data for streaming.
+//! different image file formats into band data for HTTP payloads and inference.
 
 mod npy;
 mod standard;

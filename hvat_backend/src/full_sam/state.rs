@@ -53,11 +53,7 @@ impl EndpointMetrics {
     fn snapshot(&self) -> EndpointMetricsSnapshot {
         let requests = self.requests.load(Ordering::Relaxed);
         let total_latency_ms = self.total_latency_ms.load(Ordering::Relaxed);
-        let avg_latency_ms = if requests == 0 {
-            0
-        } else {
-            total_latency_ms / requests
-        };
+        let avg_latency_ms = total_latency_ms.checked_div(requests).unwrap_or_default();
         EndpointMetricsSnapshot {
             requests,
             errors: self.errors.load(Ordering::Relaxed),
@@ -197,12 +193,6 @@ pub struct AppState {
     /// Model registry for inference backends (Protocol v2)
     pub model_registry: Option<Arc<ModelRegistry>>,
 
-    /// Active connection count retained for shared helper/example compatibility.
-    pub active_connections: AtomicU64,
-
-    /// Connection ID counter for generating unique IDs
-    connection_id_counter: AtomicU64,
-
     /// REST route telemetry counters for dashboarding.
     pub rest_metrics: RestRouteMetrics,
 
@@ -282,38 +272,8 @@ impl AppState {
             sessions: RwLock::new(HashMap::new()),
             pyramid_tasks: RwLock::new(HashMap::new()),
             model_registry,
-            active_connections: AtomicU64::new(0),
-            connection_id_counter: AtomicU64::new(0),
             rest_metrics: RestRouteMetrics::default(),
         })
-    }
-
-    /// Try to acquire a connection slot.
-    ///
-    /// Returns `Some(connection_id)` if under the limit, `None` if at capacity.
-    pub fn try_acquire_connection(&self) -> Option<u64> {
-        let max_connections = self.config.max_connections as u64;
-        let current = self.active_connections.fetch_add(1, Ordering::SeqCst);
-
-        if current >= max_connections {
-            // Over limit, rollback
-            self.active_connections.fetch_sub(1, Ordering::SeqCst);
-            None
-        } else {
-            // Generate unique connection ID
-            let id = self.connection_id_counter.fetch_add(1, Ordering::SeqCst);
-            Some(id)
-        }
-    }
-
-    /// Release a connection slot.
-    pub fn release_connection(&self) {
-        self.active_connections.fetch_sub(1, Ordering::SeqCst);
-    }
-
-    /// Get current active connection count.
-    pub fn connection_count(&self) -> u64 {
-        self.active_connections.load(Ordering::SeqCst)
     }
 }
 
@@ -334,9 +294,6 @@ impl crate::helper::http::projects::ProjectRoutesState for AppState {
 /// Per-user session state for resource management.
 #[derive(Debug)]
 pub struct SessionState {
-    /// Currently active stream count
-    pub active_streams: usize,
-
     /// Memory currently used by this session (bytes)
     pub memory_used: u64,
 
@@ -353,7 +310,6 @@ impl Default for SessionState {
 impl SessionState {
     pub fn new() -> Self {
         Self {
-            active_streams: 0,
             memory_used: 0,
             last_activity: std::time::Instant::now(),
         }

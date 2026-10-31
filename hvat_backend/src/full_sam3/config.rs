@@ -60,7 +60,7 @@ impl Sam3RuntimeKind {
 /// HVAT Axum SAM3 backend CLI arguments.
 #[derive(Parser, Debug, Clone)]
 #[command(name = "hvat-backend-sam3")]
-#[command(about = "HVAT API server for hyperspectral image streaming (SAM3 backend)")]
+#[command(about = "HVAT REST API server for hyperspectral images (SAM3 backend)")]
 #[command(version)]
 pub struct CliArgs {
     #[command(flatten)]

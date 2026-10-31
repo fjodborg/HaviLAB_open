@@ -14,7 +14,7 @@ use crate::sam::{ExecutionProvider, SamVariant};
 /// crate adds axum-specific options (pyramid pregen + SAM integration).
 #[derive(Parser, Debug, Clone)]
 #[command(name = "hvat-server")]
-#[command(about = "HVAT API server for hyperspectral image streaming")]
+#[command(about = "HVAT REST API server for hyperspectral images")]
 #[command(version)]
 pub struct CliArgs {
     #[command(flatten)]

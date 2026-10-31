@@ -1,4 +1,4 @@
-//! Image metadata and streaming endpoints.
+//! Image metadata and HTTP image payload endpoints.
 
 use std::sync::Arc;
 
@@ -73,7 +73,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/download/part/{part_index}", get(download_images_part))
         .route("/{id}/meta", get(get_metadata))
         .route("/{id}/bands", get(get_bands))
-        // Legacy /{id}/stream route removed - use REST /{id}/bands endpoint.
         .route("/{id}/thumbnail", get(get_thumbnail))
         .route("/{id}/raw", get(get_raw_image))
 }
@@ -303,7 +302,7 @@ async fn get_thumbnail(
                     image_id,
                     err
                 );
-                crate::common::streaming::generate_thumbnail(
+                crate::common::thumbnail::generate_thumbnail(
                     &state.config.data_dir,
                     &state.loaders,
                     &image_id,
@@ -314,7 +313,7 @@ async fn get_thumbnail(
             }
         }
     } else {
-        crate::common::streaming::generate_thumbnail(
+        crate::common::thumbnail::generate_thumbnail(
             &state.config.data_dir,
             &state.loaders,
             &image_id,

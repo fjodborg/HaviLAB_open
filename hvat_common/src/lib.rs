@@ -1,10 +1,9 @@
 //! Shared utilities for HVAT crates.
 //!
-//! This crate defines the protocol, annotation exchange formats, and data
-//! utilities shared by the HVAT backend and compatible clients.
+//! This crate defines REST capability schemas, annotation exchange formats, and
+//! data utilities shared by the HVAT backend and compatible clients.
 
 pub mod annotation_io;
-pub mod binary;
 pub mod error;
 pub mod interpolation;
 pub mod packing;
@@ -12,14 +11,13 @@ pub mod protocol;
 pub mod pyramid;
 
 pub use annotation_io::*;
-pub use binary::BinaryReader;
 pub use error::{ErrorContext, ProtocolError};
 pub use interpolation::bilinear_sample;
 pub use packing::{BANDS_PER_LAYER, BandSlice, MIN_TEXTURE_LAYERS, pack_bands_to_rgba_layers};
 pub use protocol::{
-    ClientMessage, DownloadMode, ErrorCategory, ErrorCode, InputSchema, ModelCapability, ModelType,
-    OptionSchema, OutputSchema, PROTOCOL_VERSION, ServerCapabilities, ServerFeatures, ServerInfo,
-    ServerLimits, ServerMessageType, Severity,
+    DownloadMode, ErrorCategory, ErrorCode, InputSchema, ModelCapability, ModelType, OptionSchema,
+    OutputSchema, PROTOCOL_VERSION, ServerCapabilities, ServerFeatures, ServerInfo, ServerLimits,
+    Severity,
 };
 pub use pyramid::{MAX_PYRAMID_LEVEL, PyramidLevel};
 

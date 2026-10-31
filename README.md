@@ -35,7 +35,7 @@ backend that is reachable from your browser.
 - `hvat_backend`: Primary REST backend with optional SAM2 inference.
 - `hvat_backend_sam3`: SAM3 backend entry point. Its default compatibility
   runtime uses the SAM2 ONNX artifacts.
-- `simple`: Compatibility backend enabled with the `legacy-ws` feature.
+- `simple`: Lightweight REST backend with project-state and download endpoints.
 - `hvat_backend_mock_sam`: Deterministic development and integration-test
   backend. It is not included in public release archives.
 

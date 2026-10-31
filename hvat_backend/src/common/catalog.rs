@@ -58,7 +58,7 @@ pub fn decode_relative_path_from_image_id(image_id: &str) -> Option<String> {
     }
 
     let mut bytes = Vec::with_capacity(encoded.len() / 2);
-    for chunk in encoded.as_bytes().chunks_exact(2) {
+    for chunk in encoded.as_bytes().as_chunks::<2>().0 {
         let hi = from_hex_digit(chunk[0])?;
         let lo = from_hex_digit(chunk[1])?;
         bytes.push((hi << 4) | lo);

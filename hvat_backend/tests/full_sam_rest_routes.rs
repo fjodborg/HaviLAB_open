@@ -11,11 +11,11 @@ use ndarray_npy::WriteNpyExt;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 
+use hvat_backend::common::upload::MAX_UPLOAD_TARGET_ROOT_BYTES;
 use hvat_backend::sam::{ExecutionProvider, SamVariant};
 use hvat_backend::{AppState, ServerConfig, routes};
 
 struct TestContext {
-    #[expect(dead_code)]
     temp_dir: TempDir,
     #[expect(dead_code)]
     cache_dir: TempDir,
@@ -95,11 +95,6 @@ async fn setup_test_server() -> Option<TestContext> {
             data_dir: temp_dir.path().to_path_buf(),
             cache_dir: cache_dir.path().to_path_buf(),
             max_cache_memory: 100 * 1024 * 1024,
-            max_user_streams: 4,
-            max_connections: 32,
-            ping_interval_secs: 30,
-            connection_timeout_secs: 90,
-            stream_chunk_rows: 128,
             project_name: "rest_routes_test".to_string(),
         },
         max_user_memory: 50 * 1024 * 1024,
@@ -120,7 +115,8 @@ async fn setup_test_server() -> Option<TestContext> {
             tower_http::cors::CorsLayer::new()
                 .allow_origin(tower_http::cors::Any)
                 .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any),
+                .allow_headers(tower_http::cors::Any)
+                .expose_headers(tower_http::cors::Any),
         )
         .with_state(state);
 
@@ -177,6 +173,23 @@ async fn fetch_metrics(client: &reqwest::Client, addr: SocketAddr) -> serde_json
         .expect("decode metrics json")
 }
 
+fn append_multipart_file(
+    body: &mut Vec<u8>,
+    boundary: &str,
+    filename: &str,
+    content_type: &str,
+    content: &[u8],
+) {
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(content);
+    body.extend_from_slice(b"\r\n");
+}
+
 #[tokio::test]
 async fn rest_info_images_and_capabilities_work() {
     let Some(ctx) = setup_test_server().await else {
@@ -207,8 +220,34 @@ async fn rest_info_images_and_capabilities_work() {
         .expect("fetch capabilities");
     assert!(caps.status().is_success());
     let caps_json: serde_json::Value = caps.json().await.expect("decode caps");
+    assert_eq!(caps_json["features"]["project_state"].as_bool(), Some(true));
+    assert_eq!(caps_json["features"]["downloads"].as_bool(), Some(true));
+    assert_eq!(caps_json["features"]["thumbnails"].as_bool(), Some(true));
     assert_eq!(caps_json["features"]["inference"].as_bool(), Some(false));
     assert_eq!(caps_json["features"]["sam"].as_bool(), Some(false));
+    assert_eq!(
+        caps_json["features"]["managed_upload_keep_both"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(caps_json["models"].as_array().map(Vec::len), Some(0));
+    assert!(caps_json["features"].get("streaming").is_none());
+    assert!(caps_json["features"].get("progressive_streaming").is_none());
+    assert!(caps_json["limits"].get("max_concurrent_streams").is_none());
+}
+
+#[tokio::test]
+async fn legacy_websocket_route_is_not_mounted() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{}/api/ws", ctx.addr))
+        .send()
+        .await
+        .expect("request absent legacy route");
+
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -287,12 +326,37 @@ async fn rest_image_bands_reports_total_source_band_count_for_multiband_inputs()
 
     let resp = client
         .get(format!("http://{}/api/images/{}/bands", ctx.addr, image_id))
+        .header(reqwest::header::ORIGIN, "https://example.test")
         .send()
         .await
         .expect("fetch bands");
     assert!(resp.status().is_success());
 
-    let headers = resp.headers();
+    let headers = resp.headers().clone();
+    assert_eq!(
+        headers
+            .get(reqwest::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("*")
+    );
+    assert_eq!(
+        headers
+            .get(reqwest::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("*")
+    );
+    assert_eq!(
+        headers
+            .get("X-Hvat-Width")
+            .and_then(|value| value.to_str().ok()),
+        Some("5")
+    );
+    assert_eq!(
+        headers
+            .get("X-Hvat-Height")
+            .and_then(|value| value.to_str().ok()),
+        Some("6")
+    );
     assert_eq!(
         headers
             .get("X-Hvat-Num-Bands")
@@ -306,6 +370,33 @@ async fn rest_image_bands_reports_total_source_band_count_for_multiband_inputs()
             .and_then(|h| h.to_str().ok())
             .unwrap_or_default(),
         "2"
+    );
+
+    let body = resp.bytes().await.expect("read seven-band payload");
+    assert_eq!(body.len(), 240);
+}
+
+#[tokio::test]
+async fn rest_core_contract_characterization_malformed_npy_bands_returns_internal_server_error() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let mut malformed_npy = create_test_multiband_npy();
+    malformed_npy.pop();
+    std::fs::write(ctx.temp_dir.path().join("malformed.npy"), malformed_npy)
+        .expect("write truncated but otherwise supported NPY file");
+
+    let client = reqwest::Client::new();
+    let image_id = fetch_image_id_by_name(&client, ctx.addr, "malformed.npy").await;
+    let response = client
+        .get(format!("http://{}/api/images/{}/bands", ctx.addr, image_id))
+        .send()
+        .await
+        .expect("request malformed NPY bands");
+
+    assert_eq!(
+        response.status(),
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR
     );
 }
 
@@ -419,4 +510,270 @@ async fn rest_metrics_endpoint_tracks_requests_and_errors() {
         .as_u64()
         .expect("sam_infer.errors after");
     assert!(infer_errors_after > infer_errors_before);
+}
+
+#[tokio::test]
+async fn rest_upload_rejects_oversize_target_root() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let client = reqwest::Client::new();
+    let boundary = "hvat-oversize-target-root";
+    let mut body =
+        format!("--{boundary}\r\nContent-Disposition: form-data; name=\"target_root\"\r\n\r\n")
+            .into_bytes();
+    body.extend(std::iter::repeat_n(b'a', MAX_UPLOAD_TARGET_ROOT_BYTES + 1));
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+    let response = client
+        .post(format!("http://{}/api/images/upload", ctx.addr))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("post oversize upload metadata");
+
+    assert_eq!(response.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(
+        response
+            .text()
+            .await
+            .expect("read oversize response")
+            .contains("target_root")
+    );
+    assert!(!ctx.temp_dir.path().join("a").exists());
+}
+
+#[tokio::test]
+async fn rest_upload_reports_and_keeps_files_completed_before_failure() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let client = reqwest::Client::new();
+    let boundary = "hvat-partial-upload";
+    let mut body = Vec::new();
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "uploaded.png",
+        "image/png",
+        &create_test_png(),
+    );
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "unsupported.txt",
+        "text/plain",
+        b"not an image",
+    );
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let response = client
+        .post(format!("http://{}/api/images/upload", ctx.addr))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("post partially valid upload");
+
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let error = response.text().await.expect("read partial upload response");
+    assert!(
+        error.starts_with("PARTIAL_UPLOAD:"),
+        "unexpected error: {error}"
+    );
+    assert!(error.contains("1 file(s) were kept"));
+
+    let uploaded = ctx.temp_dir.path().join("uploaded.png");
+    assert_eq!(
+        std::fs::read(&uploaded).expect("completed file is kept"),
+        create_test_png()
+    );
+    assert!(!ctx.temp_dir.path().join("unsupported.txt").exists());
+
+    let response = client
+        .get(format!("http://{}/api/images", ctx.addr))
+        .send()
+        .await
+        .expect("refresh image list");
+    let images: serde_json::Value = response.json().await.expect("decode image list");
+    assert!(
+        images
+            .as_array()
+            .is_some_and(|images| images.iter().any(|image| image["name"] == "uploaded.png"))
+    );
+}
+
+#[tokio::test]
+async fn managed_keep_both_upload_preserves_original_and_returns_actual_path() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let client = reqwest::Client::new();
+    let boundary = "hvat-managed-keep-both-original";
+    let uploaded_bytes = create_large_test_png();
+    let mut body = Vec::new();
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "test_image.png",
+        "image/png",
+        &uploaded_bytes,
+    );
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let response = client
+        .post(format!("http://{}/api/images/upload", ctx.addr))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("post no-action duplicate upload");
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uploaded: serde_json::Value = response.json().await.expect("decode upload response");
+    assert_eq!(uploaded["uploaded"].as_u64(), Some(1));
+    assert_eq!(uploaded["files"], serde_json::json!(["test_image_v2.png"]));
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("test_image.png")).expect("read original image"),
+        create_test_png()
+    );
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("test_image_v2.png"))
+            .expect("read uploaded version"),
+        uploaded_bytes
+    );
+}
+
+#[tokio::test]
+async fn managed_keep_both_upload_same_request_duplicates_get_distinct_paths_and_ids() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let client = reqwest::Client::new();
+    let boundary = "hvat-managed-keep-both-batch";
+    let first_bytes = create_test_png();
+    let second_bytes = create_large_test_png();
+    let mut body = Vec::new();
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "repeated.png",
+        "image/png",
+        &first_bytes,
+    );
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "repeated.png",
+        "image/png",
+        &second_bytes,
+    );
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let response = client
+        .post(format!("http://{}/api/images/upload", ctx.addr))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("post same-request duplicate uploads");
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uploaded: serde_json::Value = response.json().await.expect("decode upload response");
+    assert_eq!(uploaded["uploaded"].as_u64(), Some(2));
+    assert_eq!(
+        uploaded["files"],
+        serde_json::json!(["repeated.png", "repeated_v2.png"])
+    );
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("repeated.png")).expect("read first version"),
+        first_bytes
+    );
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("repeated_v2.png")).expect("read second version"),
+        second_bytes
+    );
+
+    let images: serde_json::Value = client
+        .get(format!("http://{}/api/images", ctx.addr))
+        .send()
+        .await
+        .expect("refresh image catalog")
+        .json()
+        .await
+        .expect("decode image catalog");
+    let find_by_path = |path: &str| {
+        images
+            .as_array()
+            .and_then(|images| images.iter().find(|image| image["path"] == path))
+            .unwrap_or_else(|| panic!("expected path {path} in image catalog: {images}"))
+    };
+    let original = find_by_path("repeated.png");
+    let version = find_by_path("repeated_v2.png");
+    assert_ne!(original["id"], version["id"]);
+}
+
+#[tokio::test]
+async fn managed_keep_both_upload_later_part_failure_keeps_completed_version() {
+    let Some(ctx) = setup_test_server().await else {
+        return;
+    };
+    let client = reqwest::Client::new();
+    let boundary = "hvat-managed-keep-both-partial";
+    let uploaded_bytes = create_large_test_png();
+    let mut body = Vec::new();
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "test_image.png",
+        "image/png",
+        &uploaded_bytes,
+    );
+    append_multipart_file(
+        &mut body,
+        boundary,
+        "unsupported.txt",
+        "text/plain",
+        b"not an image",
+    );
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let response = client
+        .post(format!("http://{}/api/images/upload", ctx.addr))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("post partially valid duplicate upload");
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let error = response.text().await.expect("read partial upload response");
+    assert!(
+        error.starts_with("PARTIAL_UPLOAD:"),
+        "unexpected error: {error}"
+    );
+    assert!(error.contains("1 file(s) were kept"));
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("test_image.png")).expect("read original image"),
+        create_test_png()
+    );
+    assert_eq!(
+        std::fs::read(ctx.temp_dir.path().join("test_image_v2.png"))
+            .expect("read completed version"),
+        uploaded_bytes
+    );
+    assert!(!ctx.temp_dir.path().join("unsupported.txt").exists());
 }

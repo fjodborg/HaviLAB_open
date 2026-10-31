@@ -36,7 +36,7 @@ pub fn api_router() -> Router<Arc<AppState>> {
         .route("/capabilities", get(capabilities::get_capabilities))
         // REST endpoint telemetry snapshot for dashboards
         .route("/metrics", get(metrics::get_metrics))
-        // Image metadata and streaming from images module
+        // Image metadata and payloads from images module
         .nest("/images", images::router())
         // REST SAM routes
         .nest("/sam", sam::router())

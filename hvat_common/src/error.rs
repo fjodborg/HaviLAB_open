@@ -1,30 +1,10 @@
-//! Error types for WebSocket protocol.
-//!
-//! Provides structured error information that can be serialized to the
-//! binary protocol format and transmitted over WebSocket connections.
+//! Structured errors used by the frontend and application logic.
 
 use serde::{Deserialize, Serialize};
 
-use crate::protocol::{ErrorCode, ServerMessageType, Severity};
+use crate::protocol::{ErrorCode, Severity};
 
-const MAX_U16_BYTES: usize = u16::MAX as usize;
-
-fn truncate_utf8_to_u16(value: &str) -> &str {
-    if value.len() <= MAX_U16_BYTES {
-        return value;
-    }
-
-    let mut end = MAX_U16_BYTES;
-    while end > 0 && !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    &value[..end]
-}
-
-/// Full error information for protocol transmission.
-///
-/// This structure contains all information needed to properly display
-/// and handle errors on the client side, including retry logic.
+/// Structured error information for display and retry decisions.
 #[derive(Debug, Clone)]
 pub struct ProtocolError {
     /// Error code from the hierarchy
@@ -59,7 +39,7 @@ impl ProtocolError {
         }
     }
 
-    /// Create an error (connection stays open).
+    /// Create a non-fatal error.
     pub fn error(code: ErrorCode, message: impl Into<String>) -> Self {
         Self {
             code,
@@ -100,104 +80,11 @@ impl ProtocolError {
         self.context = context;
         self
     }
-
-    /// Encode the error payload without the message header.
-    ///
-    /// This is used by the multiplexed protocol where the header is added separately.
-    ///
-    /// Format:
-    /// ```text
-    /// [code:u16][severity:u8][retryable:u8][retry_after:u32]
-    /// [context_len:u16][msg_len:u16][context:utf8][message:utf8]
-    /// ```
-    pub fn encode_payload(&self) -> Vec<u8> {
-        let context_json = match &self.context {
-            ErrorContext::None => String::new(),
-            ctx => serde_json::to_string(ctx).unwrap_or_default(),
-        };
-        // Context is parsed as JSON on decode; if too large for u16 framing,
-        // drop it rather than truncating into invalid JSON.
-        let context_json = if context_json.len() <= MAX_U16_BYTES {
-            context_json
-        } else {
-            String::new()
-        };
-        let truncated_message = truncate_utf8_to_u16(&self.message);
-
-        let context_bytes = context_json.as_bytes();
-        let message_bytes = truncated_message.as_bytes();
-
-        let mut buf =
-            Vec::with_capacity(2 + 1 + 1 + 4 + 2 + 2 + context_bytes.len() + message_bytes.len());
-
-        buf.extend_from_slice(&(self.code as u16).to_le_bytes());
-        buf.push(self.severity.to_byte());
-        buf.push(self.retryable as u8);
-        buf.extend_from_slice(&self.retry_after_ms.to_le_bytes());
-        buf.extend_from_slice(&(context_bytes.len() as u16).to_le_bytes());
-        buf.extend_from_slice(&(message_bytes.len() as u16).to_le_bytes());
-        buf.extend_from_slice(context_bytes);
-        buf.extend_from_slice(message_bytes);
-
-        buf
-    }
-
-    /// Encode to binary protocol format.
-    ///
-    /// Format:
-    /// ```text
-    /// [version:u8][type:u8][code:u16][severity:u8][retryable:u8][retry_after:u32]
-    /// [context_len:u16][msg_len:u16][context:utf8][message:utf8]
-    /// ```
-    pub fn encode(&self, version: u8) -> Vec<u8> {
-        let payload = self.encode_payload();
-        let mut buf = Vec::with_capacity(2 + payload.len());
-        buf.push(version);
-        buf.push(ServerMessageType::Error.to_byte());
-        buf.extend_from_slice(&payload);
-        buf
-    }
-
-    /// Decode from binary protocol format.
-    ///
-    /// Expects data to start AFTER the version and type bytes.
-    pub fn decode(data: &[u8]) -> Option<Self> {
-        use crate::BinaryReader;
-
-        let mut reader = BinaryReader::new(data);
-
-        let code = reader.read_u16()?;
-        let code = ErrorCode::from_u16(code)?;
-
-        let severity = Severity::from_byte(reader.read_u8()?)?;
-        let retryable = reader.read_u8()? != 0;
-        let retry_after_ms = reader.read_u32()?;
-        let context_len = reader.read_u16()? as usize;
-        let message_len = reader.read_u16()? as usize;
-
-        let context = if context_len > 0 {
-            let context_json = reader.read_str(context_len)?;
-            serde_json::from_str(context_json).unwrap_or(ErrorContext::None)
-        } else {
-            ErrorContext::None
-        };
-
-        let message = reader.read_str_lossy(message_len).unwrap_or_default();
-
-        Some(Self {
-            code,
-            severity,
-            retryable,
-            retry_after_ms,
-            context,
-            message,
-        })
-    }
 }
 
 /// Structured error context for additional information.
 ///
-/// This is serialized as JSON and included in the error message.
+/// Context is retained for diagnostics and user-facing error details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ErrorContext {
@@ -230,7 +117,7 @@ pub enum ErrorContext {
         available_vram_mb: Option<u32>,
     },
 
-    /// Protocol version mismatch context
+    /// Contract version mismatch context
     Protocol {
         expected_version: u8,
         received_version: u8,

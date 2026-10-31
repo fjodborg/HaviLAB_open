@@ -6,7 +6,6 @@ pub mod error;
 pub mod inference;
 pub mod loaders;
 pub mod packer;
-pub mod protocol;
 pub mod pyramid;
 pub mod routes;
 pub mod sam;

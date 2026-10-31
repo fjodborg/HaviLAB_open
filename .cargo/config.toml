@@ -7,4 +7,4 @@ RUST_TEST_THREADS = "4"
 [alias]
 serve = "run --profile release-dev -p hvat_backend --bin hvat_backend"
 serve-sam3 = "run --profile release-dev -p hvat_backend --bin hvat_backend_sam3"
-serve-simple = "run --profile release-dev -p hvat_backend --bin simple --features legacy-ws"
+serve-simple = "run --profile release-dev -p hvat_backend --bin simple"

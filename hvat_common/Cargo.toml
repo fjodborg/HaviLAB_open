@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0"
 authors = ["fjodborg <github.com/fjodborg>"]
-description = "Shared utilities for HVAT crates - RGBA packing, band data handling"
+description = "Shared REST contracts and data utilities for HVAT crates"
 
 [dependencies]
 # Serialization for protocol types

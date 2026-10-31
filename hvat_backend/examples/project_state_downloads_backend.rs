@@ -1,15 +1,14 @@
-//! Streaming backend example with project-state + downloads enabled.
+//! REST backend example with project-state + downloads enabled.
 //!
-//! This is the "streaming_state_downloads" profile:
+//! This is the "project_state_downloads" profile:
 //! - `/api/info`
 //! - `/api/images`
 //! - `/api/project-state` (GET/PUT)
 //! - `/api/images/download`
-//! - `/api/ws`
 //! - No inference/SAM
 //!
 //! Run:
-//! `cargo run -p hvat_backend --example streaming_state_downloads_backend -- ./data`
+//! `cargo run -p hvat_backend --example project_state_downloads_backend -- ./data`
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -37,9 +36,9 @@ async fn main() -> anyhow::Result<()> {
     if let Some(arg_data_dir) = std::env::args().nth(1) {
         config.data_dir = arg_data_dir.into();
     }
-    config.project_name = "streaming-state-downloads-example".to_string();
+    config.project_name = "project-state-downloads-example".to_string();
 
-    tracing::warn!("Example limitations: inference=false, sam=false, progressive_streaming=false");
+    tracing::warn!("Example limitations: inference=false, sam=false");
 
     let state = Arc::new(AppState::new(config.clone()));
 
@@ -57,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(
-        "Streaming+state+downloads example listening on http://{}",
+        "Project-state+downloads example listening on http://{}",
         addr
     );
     axum::serve(listener, app).await?;

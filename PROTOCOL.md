@@ -2,7 +2,7 @@
 
 **Version:** 4  
 **Status:** Active (REST-first)  
-**Last Updated:** 2026-06-01
+**Last Updated:** 2026-10-10
 
 This document is the backend-facing contract for integrating with HVAT clients without reading frontend source code.
 
@@ -16,7 +16,7 @@ Product runtime is REST-first.
 - Project-state persistence: REST
 - Download flow: REST
 
-WebSocket transport remains a compatibility path only (see section 9).
+WebSocket transport is not supported. Clients and compatible backends use REST.
 
 ## 2. Conformance Language
 
@@ -137,17 +137,15 @@ Returns `ServerCapabilities`:
   "limits": {
     "max_image_size": 4294967296,
     "max_pyramid_levels": 8,
-    "max_concurrent_streams": 4,
     "max_concurrent_inferences": 2
   },
   "features": {
-    "streaming": true,
     "project_state": true,
     "downloads": true,
     "thumbnails": true,
     "inference": true,
     "sam": true,
-    "progressive_streaming": true
+    "managed_upload_keep_both": true
   },
   "download_mode": "chunked",
   "models": []
@@ -158,12 +156,17 @@ Semantics:
 
 - `features.project_state=true` means `/api/project-state` is implemented.
 - `features.thumbnails=true` means `/api/images/{id}/thumbnail` is implemented.
+- `features.downloads=true` means image download functionality is implemented;
+  `download_mode` identifies the advertised download endpoints when known.
+- `features.managed_upload_keep_both=true` certifies that every upload path in
+  this backend profile uses the no-clobber KEEP BOTH contract below. Omitted or
+  `false` means safe managed uploads are not advertised; a client requiring the
+  no-overwrite guarantee MUST NOT upload to that backend.
 - `download_mode` contract:
   - `single_zip` => `/api/images/download`
   - `chunked` => `/api/images/download/plan` and `/api/images/download/part/{part_index}`
   - `unknown` => compatibility probing by clients
 - `features.inference` and `features.sam` MUST match model availability in `models`.
-- `features.streaming` MAY remain true for compatibility signaling; REST remains product path.
 - For SAM UI compatibility, advertise at least one model that:
   - has segmentation semantics (`type=segmentation`)
   - has input type `point_list`
@@ -248,8 +251,34 @@ Recommended status mapping:
 
 Multipart fields:
 
-- `target_root` (optional text, MUST appear before `files` fields)
+- `target_root` (optional text, MUST appear at most once and before `files` fields; maximum UTF-8 length is 65,536 bytes)
 - `files` (one or more file parts)
+
+The request has no conflict-action field: omitting an action (including the
+legacy/current request shape) means KEEP BOTH. For each file, the backend first
+tries its normalized full project-relative path. If that path is occupied, it
+preserves the existing file and tries `_v2`, `_v3`, and subsequent increasing
+suffixes immediately before the final supported extension, keeping the parent
+directory (for example, `folder/sample.png` becomes `folder/sample_v2.png`).
+Concurrent collisions retry the next suffix atomically; existing versions are
+never replaced or removed. Implementations MUST stage each payload in an
+exclusively created request-owned file on the same filesystem and publish with
+an atomic no-replace hard-link operation. An occupied candidate advances to the
+next suffix. No additional case folding is applied; filesystem collision
+behavior determines whether differently-cased names collide. If atomic
+no-replace publication is unsupported or otherwise fails, the upload MUST fail
+closed; it MUST NOT fall back to an existence check followed by a replacing
+rename. No preview route or destructive upload option is defined.
+
+Files are finalized one at a time. If a later file or multipart field fails,
+previously completed files remain on the server. The error body MUST begin with
+`PARTIAL_UPLOAD:` and state how many files were kept; clients SHOULD refresh the
+image list when they receive this marker. The incomplete file is not committed.
+The frontend SHOULD report partial completion rather than presenting the request
+as a total failure.
+
+Implementations MUST enforce the `target_root` byte limit while reading the
+multipart field, before buffering the whole value or normalizing its path.
 
 Response:
 
@@ -259,6 +288,10 @@ Response:
   "files": ["nested/a.png", "nested/b.npy"]
 }
 ```
+
+`files` MUST contain the actual final project-relative paths after collision
+allocation. These returned paths are authoritative if another writer wins an
+advisory name before publication.
 
 ### 7.4 `GET /api/images/{id}/thumbnail`
 
@@ -341,14 +374,7 @@ Response:
 For non-SAM endpoints, plain-text error responses are acceptable.
 Use consistent HTTP status codes and deterministic messages.
 
-## 9. WebSocket Compatibility Path (not product default)
-
-A compatibility backend may expose multiplexed WebSocket at `/api/ws`.
-
-- This path is for compatibility/harness scenarios.
-- REST contract in this document is the product interoperability target.
-
-## 10. Change Policy
+## 9. Change Policy
 
 Any REST contract change MUST include:
 

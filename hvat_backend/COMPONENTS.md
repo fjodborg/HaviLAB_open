@@ -25,7 +25,7 @@
 | Module | What It Does | Key Entry Points | Requires | Used By |
 |---|---|---|---|---|
 | `config.rs` | CLI/env config parsing and validation | `ServerConfig::from_cli`, `CliArgs` | Valid paths and numeric limits | `main.rs`, `state.rs` |
-| `state.rs` | Shared app wiring (loaders, pyramid storage, SAM, model registry, connection limits) | `AppState::new`, `try_acquire_connection` | Valid `ServerConfig`, optional SAM models | All routes and startup |
+| `state.rs` | Shared app wiring (loaders, pyramid storage, SAM, model registry) | `AppState::new` | Valid `ServerConfig`, optional SAM models | All routes and startup |
 | `loaders/` | Image format abstraction (`PNG/JPEG/...`, `NPY`) | `ImageLoader` trait, `ImageLoaderRegistry` | Supported file extensions and readable files | `routes/images.rs`, `startup.rs` |
 | `pyramid/` | Pyramid generation and cache IO | `PyramidBuilder`, `PyramidStorage`, `FilesystemStorage` | Writable cache dir | `startup.rs`, `routes/images.rs` |
 | `packer.rs` | RGBA layer packing + downsampling | `pack_bands_to_rgba_layers`, `downsample_bands` | Normalized `BandData` | `routes/images.rs`, `pyramid/builder.rs` |

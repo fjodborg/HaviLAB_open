@@ -41,7 +41,7 @@ async fn get_thumbnail(
     State(state): State<Arc<AppState>>,
     Path(image_id): Path<String>,
 ) -> std::result::Result<impl IntoResponse, (StatusCode, String)> {
-    let png_bytes = crate::common::streaming::generate_thumbnail(
+    let png_bytes = crate::common::thumbnail::generate_thumbnail(
         &state.config.data_dir,
         &state.loaders,
         &image_id,
