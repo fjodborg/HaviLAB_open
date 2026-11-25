@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <base href="/HaviLAB/releases/3114625580-18367090307/" />
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>HaviLAB - Hyperspectral Visualization and Annotation Tool</title>
+        <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+        <link
+            rel="icon"
+            type="image/png"
+            sizes="192x192"
+            href="icons/icon-192x192.png"
+        />
+        <link
+            rel="icon"
+            type="image/png"
+            sizes="512x512"
+            href="icons/icon-512x512.png"
+        />
+        <link
+            rel="apple-touch-icon"
+            sizes="192x192"
+            href="icons/icon-192x192.png"
+        />
+        <link rel="manifest" href="manifest.json" />
+        
+        
+        
+        
+        <!-- Stylesheet -->
+        <link rel="stylesheet" href="/HaviLAB/releases/3114625580-18367090307/style-9f9b300579300253.css" integrity="sha384-WhvnASPt5J0+ORjhEutHs/hoRK09rXgnVxkz5Q73A3GSZqdfamPPSzIWu8bS3hpI"/>
+        <!-- Main application WASM (library target) -->
+        <!-- wasm-opt disabled: older wasm-opt versions don't support bulk-memory operations -->
+        
+<script type="module">
+import init, * as bindings from '/HaviLAB/releases/3114625580-18367090307/hvat_leptos-533cfcacbdad7fb6.js';
+const wasm = await init({ module_or_path: '/HaviLAB/releases/3114625580-18367090307/hvat_leptos-533cfcacbdad7fb6_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+        <!-- Image decoder Web Worker (separate WASM binary for async image decoding) -->
+        <!-- data-loader-shim creates an auto-generated wrapper that initializes the WASM module -->
+        
+    <link rel="modulepreload" href="/HaviLAB/releases/3114625580-18367090307/hvat_leptos-533cfcacbdad7fb6.js" crossorigin="anonymous" integrity="sha384-F7Gc4lHYup2MdhXP0ASWqNZwXTX1TFCnTcmojROWQAVnpF0gEd7Z0rHblQrNwXGG"><link rel="preload" href="/HaviLAB/releases/3114625580-18367090307/hvat_leptos-533cfcacbdad7fb6_bg.wasm" crossorigin="anonymous" integrity="sha384-EYXrDk6sTpK3hL44CdzLu1D2WlIhQg99/PHeXlur+172YGxJrc93ypsL+Qbe52oA" as="fetch" type="application/wasm"></head>
+    <body>
+        <div id="app" class="loading"></div>
+    </body>
+</html>

@@ -1,0 +1,1 @@
+importScripts("./image-decoder-worker.js");wasm_bindgen("./image-decoder-worker_bg.wasm");
