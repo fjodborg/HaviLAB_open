@@ -12,13 +12,13 @@ Before using SAM3 backend please read the license: [sam3 license](https://github
 
 License is not fully decided yet, but for now i just put AGPL on it, i might make it MIT later.
 
-## Try HVAT
+## Try HaviLAB
 
-- [Open the live demo](https://fjodborg.github.io/hvat_open/)
-- [Download the latest backend binaries and compiled frontend](https://github.com/fjodborg/hvat_open/releases/latest)
+- [Open the live browser app](https://fjodborg.github.io/HaviLAB/)
+- [Download the latest backend binaries and compiled frontend](https://github.com/fjodborg/HaviLAB/releases/latest)
 
-The live demo is a compiled browser frontend deployed from a release artifact.
-Its source code is maintained separately. Connect it to an HVAT-compatible
+The live app is a compiled browser frontend served from the `gh-pages` branch.
+Its source code is maintained separately. Connect it to a HaviLAB-compatible
 backend that is reachable from your browser.
 
 ## Repository Contents
